@@ -4,6 +4,10 @@ A Windows tray app that remembers where your app windows go for each monitor set
 
 Plug into your home desk, the office, or just use the laptop screen: each set of connected monitors gets its own **profile**, and Desk Layouts recognizes it automatically.
 
+![Windows scattered across three monitors, then restored to their saved spots with Ctrl+Alt+R](docs/images/layouts.png)
+
+<sub>Images in this README are illustrations, not screenshots.</sub>
+
 ## Features
 
 - **Profiles per monitor setup.** Identified by the connected monitors' model and resolution, so the right profile is active as soon as you dock.
@@ -21,6 +25,8 @@ Plug into your home desk, the office, or just use the laptop screen: each set of
 | `Ctrl+Alt+S` | Remember the focused window's current position |
 
 Left-click the tray icon to restore; right-click for windows, profiles and settings. Hotkeys can be changed in the settings file (tray → *Open settings file*), then restart the app.
+
+<img src="docs/images/tray-menu.png" alt="Tray menu with the Profiles submenu open" width="620">
 
 ## Setup
 
@@ -40,6 +46,8 @@ Then double-click `desk_layouts.pyw`. The `.pyw` extension runs it without a con
 2. The first time on a new monitor setup, name the profile (e.g. "Home Office").
 3. Tick the windows you want, then **Save**.
 4. Later, press `Ctrl+Alt+R` to put everything back.
+
+<img src="docs/images/chooser.png" alt="The Remember windows dialog with several apps ticked" width="560">
 
 ## Data
 
