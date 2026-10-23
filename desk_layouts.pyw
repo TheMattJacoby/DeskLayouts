@@ -19,18 +19,21 @@ import ctypes
 import json
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
 import uuid
+import webbrowser
 from ctypes import wintypes as W
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
-VERSION = "1.0"
+VERSION = "1.1"
 APP_NAME = "Desk Layouts"
+REPO_URL = "https://github.com/TheMattJacoby/DeskLayouts"
 INSTANCE_TITLE = "DeskLayouts-Instance"
 MUTEX_NAME = "DeskLayouts_SingleInstance_Mutex"
 
@@ -492,13 +495,29 @@ FONT = ("Segoe UI", 10)
 
 
 def make_icon():
+    """Tray icon: dark badge with a monitor showing tiled windows in teal.
+    Same family as Monitor Mirror's icon (same badge and monitor, blue accent)."""
     from PIL import Image, ImageDraw
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    S = 256
+    grad = Image.new("RGBA", (S, S))
+    gd = ImageDraw.Draw(grad)
+    top, bottom = (51, 65, 85), (30, 41, 59)
+    for y in range(S):
+        t = y / (S - 1)
+        gd.line([(0, y), (S, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(top, bottom)) + (255,))
+    mask = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((8, 8, S - 8, S - 8), 56, fill=255)
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    img.paste(grad, (0, 0), mask)
     d = ImageDraw.Draw(img)
-    for x0, y0, x1, y1 in ((2, 14, 22, 40), (22, 8, 42, 42), (42, 14, 62, 40)):
-        d.rounded_rectangle((x0, y0, x1, y1), 3, fill=(79, 140, 255, 255), outline=(20, 30, 60, 255), width=2)
-    d.rectangle((28, 16, 38, 26), fill=(255, 255, 255, 235))
-    d.rectangle((14, 44, 50, 52), fill=(79, 140, 255, 255))
+    frame = (226, 232, 240)
+    d.rounded_rectangle((40, 52, 216, 168), 14, outline=frame, width=16)     # monitor
+    d.rectangle((119, 168, 137, 190), fill=frame)                            # stand
+    d.rounded_rectangle((90, 188, 166, 202), 7, fill=frame)                  # foot
+    accent = (45, 212, 191)                                                  # teal
+    d.rounded_rectangle((62, 74, 122, 146), 6, fill=accent)
+    d.rounded_rectangle((132, 74, 194, 106), 6, fill=accent)
+    d.rounded_rectangle((132, 114, 194, 146), 6, fill=accent)
     return img
 
 
@@ -538,9 +557,14 @@ class App:
                 return pid, p
         return None, None
 
+    def status(self):
+        _, p = self.active()
+        n = len(self.monitors)
+        return f"Displays: {p['name']}" if p else f"Displays: unrecognized ({n} monitor{'s' * (n != 1)})"
+
     def tooltip(self):
         _, p = self.active()
-        return f"{APP_NAME} – {p['name'] if p else 'unrecognized displays'}"
+        return f"{APP_NAME} v{VERSION} · {p['name'] if p else 'unrecognized displays'}"
 
     def refresh_tray(self):
         try:
@@ -554,25 +578,27 @@ class App:
         return lambda icon=None, item=None: self.q.put(("cmd", name, arg))
 
     def build_menu(self):
+        """Standard layout shared with Monitor Mirror:
+        name + version, status / main actions / app settings / Start with Windows,
+        settings file, GitHub / Quit."""
         I, S, hk = self.pystray.MenuItem, self.pystray.Menu.SEPARATOR, self.s["hotkeys"]
-
-        def header(item):
-            _, p = self.active()
-            n = len(self.monitors)
-            return f"Displays: {p['name']}" if p else f"Displays: unrecognized ({n} monitor{'s' * (n != 1)})"
-
+        note = lambda text: I(text, lambda: None, enabled=False)
         return self.pystray.Menu(
-            I(header, lambda: None, enabled=False),
+            note(f"{APP_NAME}  v{VERSION}"),
+            note(lambda item: self.status()),
+            S,
             I(f"Restore windows\t{hk['restore']}", self.cmd("restore"), default=True),
             I("Choose windows to remember…", self.cmd("chooser")),
             S,
             I("Profiles", self.pystray.Menu(self.profile_items)),
             I("Auto-restore when displays change", self.cmd("toggle_auto"),
               checked=lambda i: self.s["auto_restore"]),
+            S,
             I("Start with Windows", self.cmd("toggle_startup"), checked=lambda i: startup_enabled()),
             I("Open settings file", self.cmd("open_settings")),
+            I("View on GitHub", self.cmd("github")),
             S,
-            I(f"Quit {APP_NAME} (v{VERSION})", self.cmd("quit")),
+            I("Quit", self.cmd("quit")),
         )
 
     def profile_items(self):
@@ -635,7 +661,9 @@ class App:
             set_startup(not startup_enabled())
         elif name == "open_settings":
             save_settings(self.s)
-            os.startfile(SETTINGS_PATH)
+            subprocess.Popen(["notepad.exe", str(SETTINGS_PATH)])
+        elif name == "github":
+            webbrowser.open(REPO_URL)
         elif name == "quit":
             self.quit()
             return

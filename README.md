@@ -1,3 +1,5 @@
+<img src="docs/images/icon.png" width="72" alt="Desk Layouts icon">
+
 # Desk Layouts
 
 A Windows tray app that remembers where your app windows go for each monitor setup and puts them back with a hotkey.
