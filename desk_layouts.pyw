@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
-VERSION = "1.1"
+VERSION = "1.2"
 APP_NAME = "Desk Layouts"
 REPO_URL = "https://github.com/TheMattJacoby/DeskLayouts"
 INSTANCE_TITLE = "DeskLayouts-Instance"
@@ -479,7 +479,7 @@ def hotkey_thread(app):
         else:
             failed.append(spec or name)
     if failed:
-        app.q.put(("toast", f"Hotkey unavailable (in use by another app?): {', '.join(failed)}", 4500))
+        app.q.put(("toast", f"Hotkey unavailable (in use by another app?): {', '.join(failed)}", TOAST_WARN_MS))
     msg = W.MSG()
     while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
         if msg.message == WM_HOTKEY and msg.wParam in names:
@@ -489,6 +489,11 @@ def hotkey_thread(app):
 
 
 # --------------------------------------------------------------- app
+
+# Toasts: same look in all of these tray apps; the accent matches the app's icon.
+TOAST_BG, TOAST_FG = "#1e293b", "#f1f5f9"
+TOAST_ACCENT = "#2dd4bf"
+TOAST_MS, TOAST_WARN_MS = 2500, 4500   # normal notices / warnings
 
 BG, FG, MUTED, ACCENT, ROW = "#1f2430", "#f2f4f8", "#9aa3b5", "#4f8cff", "#272d3b"
 FONT = ("Segoe UI", 10)
@@ -546,8 +551,7 @@ class App:
 
         self.root.after(100, self.drain)
         self.root.after(2000, self.poll_displays)
-        pid, prof = self.active()
-        self.toast(f"{APP_NAME} running · Displays: {prof['name'] if prof else 'no profile yet'}")
+        self.toast(f"{APP_NAME} v{VERSION} running · {self.status()}")
 
     # ---- state helpers
     def active(self, fp=None):
@@ -627,7 +631,7 @@ class App:
                     else:
                         self.handle(item[1], item[2])
                 except Exception as ex:
-                    self.toast(f"Something went wrong: {ex}", 4000)
+                    self.toast(f"Something went wrong: {ex}", TOAST_WARN_MS)
         except queue.Empty:
             pass
         self.root.after(100, self.drain)
@@ -658,7 +662,11 @@ class App:
             save_settings(self.s)
             self.toast("Auto-restore " + ("on: windows move when you plug in" if self.s["auto_restore"] else "off"))
         elif name == "toggle_startup":
-            set_startup(not startup_enabled())
+            try:
+                set_startup(not startup_enabled())
+                self.toast("Will start with Windows" if startup_enabled() else "Won't start with Windows")
+            except OSError as e:
+                self.toast(f"Couldn't change the startup setting: {e}", TOAST_WARN_MS)
         elif name == "open_settings":
             save_settings(self.s)
             subprocess.Popen(["notepad.exe", str(SETTINGS_PATH)])
@@ -688,7 +696,7 @@ class App:
                 elif prof:
                     self.toast(f"Displays: {prof['name']} · {self.s['hotkeys']['restore']} to restore windows")
                 else:
-                    self.toast("New display setup · right-click the tray icon to set up a profile", 3500)
+                    self.toast("New display setup · right-click the tray icon to set up a profile", TOAST_WARN_MS)
         finally:
             self.root.after(2000, self.poll_displays)
 
@@ -723,11 +731,11 @@ class App:
         self.monitors, self.fp = mons, fingerprint(mons)
         _, prof = self.active()
         if not prof:
-            self.toast("No profile for these displays yet · right-click the tray icon to create one", 3500)
+            self.toast("No profile for these displays yet · right-click the tray icon to create one", TOAST_WARN_MS)
             return
         entries = prof["windows"]
         if not entries:
-            self.toast(f"“{prof['name']}” has no windows yet · use “Choose windows to remember…”", 3500)
+            self.toast(f"“{prof['name']}” has no windows yet · use “Choose windows to remember…”", TOAST_WARN_MS)
             return
         fg = user32.GetForegroundWindow()
         amap = assign(entries, list_windows())
@@ -746,7 +754,7 @@ class App:
             parts.append(f"{len(entries) - len(amap)} not open")
         if failed:
             parts.append(f"{failed} couldn't move (running as admin?)")
-        self.toast(" · ".join(parts), 3000 if failed else 2200)
+        self.toast(" · ".join(parts), TOAST_WARN_MS if failed else TOAST_MS)
 
     def save_focused(self):
         hwnd = user32.GetAncestor(user32.GetForegroundWindow(), GA_ROOT)
@@ -774,20 +782,26 @@ class App:
         self.toast(f"Remembered {app_name(win.exe)} on monitor {mon.number} · {prof['name']}")
 
     # ---- UI: toast + dialogs
-    def toast(self, text, ms=2200):
+    def toast(self, text, ms=TOAST_MS):
+        """Small notice in the bottom-right corner of the screen the mouse is on.
+        Same look and behavior in Desk Layouts and Monitor Mirror; click to dismiss."""
         if self.toast_win is not None:
             try:
                 self.toast_win.destroy()
             except Exception:
                 pass
-        t = tk.Toplevel(self.root)
+        t = tk.Toplevel(self.root, bg=TOAST_BG)
         t.overrideredirect(True)
         t.attributes("-topmost", True)
         try:
-            t.attributes("-alpha", 0.95)
+            t.attributes("-alpha", 0.96)
         except Exception:
             pass
-        tk.Label(t, text=text, bg=BG, fg=FG, font=FONT, padx=16, pady=10).pack()
+        tk.Frame(t, bg=TOAST_ACCENT, width=4).pack(side="left", fill="y")
+        tk.Label(t, text=text, bg=TOAST_BG, fg=TOAST_FG, font=("Segoe UI", 10),
+                 padx=14, pady=10, justify="left", wraplength=460).pack(side="left")
+        for w in (t, *t.winfo_children()):
+            w.bind("<Button-1>", lambda e: t.destroy())
         t.update_idletasks()
         l, top, r, b = cursor_work_area()
         t.geometry(f"+{r - t.winfo_reqwidth() - 24}+{b - t.winfo_reqheight() - 24}")
